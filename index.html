@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Hospital Navigator</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+    <div id="map"></div>
+
+    <div id="status-bar">
+        <div id="gps-status">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
+            </svg>
+            <span id="gps-text">GPS: Inactive</span>
+        </div>
+        <div id="calibration-badge">
+            <span id="calibration-badge-text">Not Calibrated</span>
+        </div>
+    </div>
+
+    <div id="fab-container">
+        <button id="btn-locate" class="fab fab-primary" title="Track my location">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="8"/>
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M12 2v2M12 20v2M2 12h2M20 12h2"/>
+            </svg>
+        </button>
+        <button id="btn-calibrate" class="fab fab-secondary" title="Calibrate map">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/>
+                <circle cx="12" cy="10" r="3"/>
+            </svg>
+        </button>
+    </div>
+
+    <div id="calibration-panel" class="panel hidden">
+        <div class="panel-handle"></div>
+        <div class="panel-header">
+            <h3>Calibration Mode</h3>
+            <button id="btn-close-calibration" class="btn-icon" aria-label="Close">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="panel-body">
+            <p class="instructions">
+                Walk to a spot you can identify on the map, then <strong>tap that spot</strong> on the map.
+                Your GPS location will be recorded automatically.
+            </p>
+            <div class="point-counter">
+                <div class="counter-circle" id="counter-circle">
+                    <span id="point-count-num">0</span>
+                </div>
+                <div class="counter-label">
+                    <span id="point-count-label">points collected</span>
+                    <span class="counter-hint">minimum 3 required</span>
+                </div>
+            </div>
+            <div id="calibration-points-list"></div>
+            <div class="panel-actions">
+                <button id="btn-clear-calibration" class="btn btn-outline">Clear All</button>
+                <button id="btn-done-calibration" class="btn btn-primary" disabled>Done</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <div id="onboarding-overlay" class="overlay hidden">
+        <div class="overlay-card">
+            <div class="overlay-icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2196F3" stroke-width="1.5">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                    <circle cx="12" cy="10" r="3"/>
+                </svg>
+            </div>
+            <h2>Hospital Navigator</h2>
+            <p>Navigate the hospital using your phone's GPS and this floor plan.</p>
+            <div class="overlay-steps">
+                <div class="step">
+                    <span class="step-num">1</span>
+                    <span>Calibrate by mapping 3+ physical locations to spots on the map</span>
+                </div>
+                <div class="step">
+                    <span class="step-num">2</span>
+                    <span>Tap the location button to see where you are</span>
+                </div>
+                <div class="step">
+                    <span class="step-num">3</span>
+                    <span>Walk around and watch your position update in real time</span>
+                </div>
+            </div>
+            <button id="btn-get-started" class="btn btn-primary btn-block">Get Started</button>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="js/transform.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
