@@ -113,6 +113,34 @@ class MapStore {
         return Object.keys(this._data.maps).length > 0;
     }
 
+    async exportAll() {
+        const bundle = { version: 2, maps: {} };
+        for (const [id, meta] of Object.entries(this._data.maps)) {
+            const imageData = id === DEFAULT_MAP_ID ? null : await this._getImage(id);
+            bundle.maps[id] = { meta: { ...meta }, imageData };
+        }
+        return bundle;
+    }
+
+    async importAll(bundle) {
+        if (!bundle || !bundle.maps) throw new Error('Invalid bundle format');
+
+        for (const [id, entry] of Object.entries(bundle.maps)) {
+            if (id === DEFAULT_MAP_ID) {
+                if (entry.meta.calibration) {
+                    if (!this._data.maps[DEFAULT_MAP_ID]) continue;
+                    this._data.maps[DEFAULT_MAP_ID].calibration = entry.meta.calibration;
+                }
+                continue;
+            }
+            this._data.maps[id] = entry.meta;
+            if (entry.imageData) {
+                await this._putImage(id, entry.imageData);
+            }
+        }
+        this._saveMeta();
+    }
+
     // ===== IndexedDB =====
 
     _openDB() {

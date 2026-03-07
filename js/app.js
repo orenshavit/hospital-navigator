@@ -22,7 +22,13 @@ class HospitalNavigator {
     }
 
     async init() {
+        // #region agent log
+        fetch('http://127.0.0.1:7822/ingest/d2fffde5-cb36-4bce-b403-ce2825d88a22',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'73cc16'},body:JSON.stringify({sessionId:'73cc16',location:'app.js:init-start',message:'init starting',data:{},timestamp:Date.now(),hypothesisId:'H0'})}).catch(()=>{});
+        // #endregion
         this._store = await new MapStore().init();
+        // #region agent log
+        fetch('http://127.0.0.1:7822/ingest/d2fffde5-cb36-4bce-b403-ce2825d88a22',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'73cc16'},body:JSON.stringify({sessionId:'73cc16',location:'app.js:store-ready',message:'store initialized',data:{activeMapId:this._store.getActiveMapId(),hasAnyMaps:this._store.hasAnyMaps()},timestamp:Date.now(),hypothesisId:'H0'})}).catch(()=>{});
+        // #endregion
         this._initMap();
         await this._loadActiveMap();
         this._bindEvents();
@@ -51,6 +57,16 @@ class HospitalNavigator {
 
         L.control.zoom({ position: 'topleft' }).addTo(this._map);
         this._map.on('rotate', () => this._onMapRotate());
+
+        // #region agent log
+        this._map.on('zoomstart', () => { try { fetch('http://127.0.0.1:7822/ingest/d2fffde5-cb36-4bce-b403-ce2825d88a22',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'73cc16'},body:JSON.stringify({sessionId:'73cc16',location:'app.js:zoomstart',message:'zoom started',data:{zoom:this._map.getZoom(),minZoom:this._map.getMinZoom(),maxZoom:this._map.getMaxZoom()},timestamp:Date.now(),hypothesisId:'H1_H4'})}).catch(()=>{}); } catch(e){} });
+        // #endregion
+        // #region agent log
+        this._map.on('zoomend', () => { try { fetch('http://127.0.0.1:7822/ingest/d2fffde5-cb36-4bce-b403-ce2825d88a22',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'73cc16'},body:JSON.stringify({sessionId:'73cc16',location:'app.js:zoomend',message:'zoom ended',data:{zoom:this._map.getZoom(),boundsZoom:this._imageBounds?this._map.getBoundsZoom(this._imageBounds):null},timestamp:Date.now(),hypothesisId:'H2_H4'})}).catch(()=>{}); } catch(e){} });
+        // #endregion
+        // #region agent log
+        this._map.on('moveend', () => { try { fetch('http://127.0.0.1:7822/ingest/d2fffde5-cb36-4bce-b403-ce2825d88a22',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'73cc16'},body:JSON.stringify({sessionId:'73cc16',location:'app.js:moveend',message:'map moved',data:{zoom:this._map.getZoom()},timestamp:Date.now(),hypothesisId:'H3_H5'})}).catch(()=>{}); } catch(e){} });
+        // #endregion
     }
 
     async _loadActiveMap() {
@@ -79,6 +95,10 @@ class HospitalNavigator {
         this._imageBounds = [[0, 0], [meta.height, meta.width]];
         this._imageOverlay = L.imageOverlay(imageUrl, this._imageBounds).addTo(this._map);
         this._map.fitBounds(this._imageBounds);
+
+        // #region agent log
+        fetch('http://127.0.0.1:7822/ingest/d2fffde5-cb36-4bce-b403-ce2825d88a22',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'73cc16'},body:JSON.stringify({sessionId:'73cc16',location:'app.js:_displayMap',message:'map displayed',data:{metaId:meta.id,width:meta.width,height:meta.height,imageBounds:this._imageBounds,zoomAfterFit:this._map.getZoom(),boundsZoom:this._map.getBoundsZoom(this._imageBounds),minZoom:this._map.getMinZoom(),maxZoom:this._map.getMaxZoom(),mapSize:this._map.getSize()},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
+        // #endregion
 
         this._calibrationPoints = meta.calibration.points || [];
         this._transform = new AffineTransform();
@@ -110,6 +130,9 @@ class HospitalNavigator {
         document.getElementById('btn-close-maps').addEventListener('click', () => this._closeMapMenu());
         document.getElementById('btn-upload-map').addEventListener('click', () => this._triggerUpload());
         document.getElementById('map-file-input').addEventListener('change', (e) => this._handleFileUpload(e));
+        document.getElementById('btn-export-maps').addEventListener('click', () => this._exportMaps());
+        document.getElementById('btn-import-maps').addEventListener('click', () => document.getElementById('import-file-input').click());
+        document.getElementById('import-file-input').addEventListener('change', (e) => this._importMaps(e));
 
         this._map.on('click', (e) => this._onMapClick(e));
     }
@@ -251,6 +274,48 @@ class HospitalNavigator {
             this._showToast(`"${meta.name}" added`, 'success');
         } catch {
             this._showToast('Failed to upload map', 'error');
+        }
+    }
+
+    async _exportMaps() {
+        try {
+            this._showToast('Preparing export...');
+            const bundle = await this._store.exportAll();
+            const json = JSON.stringify(bundle);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'hospital-nav-maps.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            this._showToast('Maps exported', 'success');
+        } catch {
+            this._showToast('Export failed', 'error');
+        }
+    }
+
+    async _importMaps(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        e.target.value = '';
+
+        try {
+            this._showToast('Importing maps...');
+            const text = await file.text();
+            const bundle = JSON.parse(text);
+            await this._store.importAll(bundle);
+
+            const meta = this._store.getActiveMap();
+            if (meta) await this._displayMap(meta);
+            this._renderMapList();
+            this._showToast('Maps imported', 'success');
+        } catch {
+            this._showToast('Invalid import file', 'error');
         }
     }
 
@@ -670,7 +735,18 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// #region agent log
+window.addEventListener('error', (e) => { fetch('http://127.0.0.1:7822/ingest/d2fffde5-cb36-4bce-b403-ce2825d88a22',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'73cc16'},body:JSON.stringify({sessionId:'73cc16',location:'app.js:global-error',message:'uncaught error',data:{msg:e.message,file:e.filename,line:e.lineno,col:e.colno},timestamp:Date.now(),hypothesisId:'H0'})}).catch(()=>{}); });
+window.addEventListener('unhandledrejection', (e) => { fetch('http://127.0.0.1:7822/ingest/d2fffde5-cb36-4bce-b403-ce2825d88a22',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'73cc16'},body:JSON.stringify({sessionId:'73cc16',location:'app.js:unhandled-rejection',message:'unhandled promise rejection',data:{reason:String(e.reason)},timestamp:Date.now(),hypothesisId:'H0'})}).catch(()=>{}); });
+// #endregion
 document.addEventListener('DOMContentLoaded', () => {
+    // #region agent log
+    fetch('http://127.0.0.1:7822/ingest/d2fffde5-cb36-4bce-b403-ce2825d88a22',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'73cc16'},body:JSON.stringify({sessionId:'73cc16',location:'app.js:DOMContentLoaded',message:'app starting',data:{},timestamp:Date.now(),hypothesisId:'H0'})}).catch(()=>{});
+    // #endregion
     const app = new HospitalNavigator();
-    app.init().then(() => { window.app = app; });
+    app.init().then(() => { window.app = app; }).catch((err) => {
+        // #region agent log
+        fetch('http://127.0.0.1:7822/ingest/d2fffde5-cb36-4bce-b403-ce2825d88a22',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'73cc16'},body:JSON.stringify({sessionId:'73cc16',location:'app.js:init-error',message:'init failed',data:{error:String(err),stack:err.stack},timestamp:Date.now(),hypothesisId:'H0'})}).catch(()=>{});
+        // #endregion
+    });
 });

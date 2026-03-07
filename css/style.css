@@ -463,6 +463,30 @@ html, body {
     gap: 8px;
 }
 
+.maps-panel-divider {
+    height: 1px;
+    background: #e5e7eb;
+    margin: 14px 0;
+}
+
+.maps-transfer-row {
+    display: flex;
+    gap: 10px;
+}
+
+.btn-half {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: 13px;
+}
+
+.btn-half svg {
+    flex-shrink: 0;
+}
+
 /* ===== Buttons ===== */
 
 .btn {
@@ -501,6 +525,11 @@ html, body {
 }
 
 .btn-outline:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.btn-outline.btn-danger:hover {
     border-color: var(--error);
     color: var(--error);
 }
