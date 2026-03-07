@@ -97,7 +97,16 @@ class MapStore {
 
     async getImageURL(id) {
         if (id === DEFAULT_MAP_ID) return 'hospital-map.png';
-        return await this._getImage(id);
+        const dataUrl = await this._getImage(id);
+        if (!dataUrl) {
+            delete this._data.maps[id];
+            if (this._data.activeMapId === id) {
+                this._data.activeMapId = DEFAULT_MAP_ID;
+            }
+            this._saveMeta();
+            return null;
+        }
+        return dataUrl;
     }
 
     hasAnyMaps() {

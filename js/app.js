@@ -35,16 +35,18 @@ class HospitalNavigator {
     _initMap() {
         this._map = L.map('map', {
             crs: L.CRS.Simple,
-            minZoom: -2,
-            maxZoom: 4,
-            zoomSnap: 0.25,
-            zoomDelta: 0.5,
+            minZoom: -5,
+            maxZoom: 5,
+            zoomSnap: 0,
+            zoomDelta: 1,
+            wheelPxPerZoomLevel: 120,
             attributionControl: false,
             zoomControl: false,
             rotate: true,
             touchRotate: true,
             shiftKeyRotate: true,
-            bearing: 0
+            bearing: 0,
+            bounceAtZoomLimits: false
         });
 
         L.control.zoom({ position: 'topleft' }).addTo(this._map);
@@ -61,6 +63,15 @@ class HospitalNavigator {
         this._activeMap = meta;
         const imageUrl = await this._store.getImageURL(meta.id);
 
+        if (!imageUrl) {
+            this._showToast('Map image was lost. Falling back to default.', 'error');
+            const fallback = this._store.getActiveMap();
+            if (fallback && fallback.id !== meta.id) {
+                return this._displayMap(fallback);
+            }
+            return;
+        }
+
         if (this._imageOverlay) {
             this._map.removeLayer(this._imageOverlay);
         }
@@ -68,10 +79,6 @@ class HospitalNavigator {
         this._imageBounds = [[0, 0], [meta.height, meta.width]];
         this._imageOverlay = L.imageOverlay(imageUrl, this._imageBounds).addTo(this._map);
         this._map.fitBounds(this._imageBounds);
-        this._map.setMaxBounds([
-            [-meta.height * 0.2, -meta.width * 0.2],
-            [meta.height * 1.2, meta.width * 1.2]
-        ]);
 
         this._calibrationPoints = meta.calibration.points || [];
         this._transform = new AffineTransform();
@@ -257,15 +264,15 @@ class HospitalNavigator {
     // ===== Onboarding =====
 
     _checkFirstVisit() {
-        const hasOldData = localStorage.getItem('hospital-nav-calibration');
-        const hasNewData = localStorage.getItem('hospital-nav-data');
-        if (!hasOldData && !hasNewData) {
+        const seen = localStorage.getItem('hospital-nav-onboarded');
+        if (!seen) {
             document.getElementById('onboarding-overlay').classList.remove('hidden');
         }
     }
 
     _dismissOnboarding() {
         document.getElementById('onboarding-overlay').classList.add('hidden');
+        localStorage.setItem('hospital-nav-onboarded', '1');
     }
 
     // ===== GPS Tracking =====
