@@ -28,6 +28,9 @@ class HospitalNavigator {
 
         this._isPlacing = false;
         this._placeMarkers = [];
+
+        this._routePolyline = null;
+        this._graph = null;
     }
 
     async init() {
@@ -133,6 +136,12 @@ class HospitalNavigator {
         document.getElementById('btn-manage-places-done').addEventListener('click', () => this._closePlacesPanel());
         document.getElementById('btn-clear-paths').addEventListener('click', () => this._clearAllPaths());
 
+        document.getElementById('btn-directions').addEventListener('click', () => this._toggleDirections());
+        document.getElementById('btn-close-directions').addEventListener('click', () => this._closeDirections());
+        document.getElementById('btn-get-directions').addEventListener('click', () => this._getDirections());
+        document.getElementById('btn-clear-route').addEventListener('click', () => this._clearRoute());
+        document.getElementById('btn-swap-directions').addEventListener('click', () => this._swapDirections());
+
         this._map.on('click', (e) => this._onMapClick(e));
     }
 
@@ -224,6 +233,7 @@ class HospitalNavigator {
         if (this._isRecording) this._stopRecording();
         if (this._isTracking) this._stopTracking();
         if (this._isPlacing) this._exitPlacing();
+        this._clearRoute();
 
         this._store.setActiveMap(id);
         const meta = this._store.getMapMeta(id);
@@ -989,6 +999,180 @@ class HospitalNavigator {
                 this._deletePlace(btn.dataset.placeId);
             });
         });
+    }
+
+    // ===== Directions =====
+
+    _toggleDirections() {
+        const panel = document.getElementById('directions-panel');
+        if (panel.classList.contains('hidden')) {
+            this._openDirections();
+        } else {
+            this._closeDirections();
+        }
+    }
+
+    async _openDirections() {
+        document.getElementById('directions-panel').classList.remove('hidden');
+        document.getElementById('btn-directions').classList.add('active');
+        await this._populateDirectionsDropdowns();
+    }
+
+    _closeDirections() {
+        document.getElementById('directions-panel').classList.add('hidden');
+        document.getElementById('btn-directions').classList.remove('active');
+    }
+
+    async _populateDirectionsDropdowns() {
+        if (!this._activeMap) return;
+        const places = this._store.getPlaces(this._activeMap.id);
+
+        const fromSelect = document.getElementById('directions-from');
+        const toSelect = document.getElementById('directions-to');
+
+        const fromVal = fromSelect.value;
+        const toVal = toSelect.value;
+
+        fromSelect.innerHTML = '<option value="__mylocation__">My Location</option>';
+        toSelect.innerHTML = '';
+
+        for (const p of places) {
+            const opt1 = document.createElement('option');
+            opt1.value = p.id;
+            opt1.textContent = p.name;
+            fromSelect.appendChild(opt1);
+
+            const opt2 = document.createElement('option');
+            opt2.value = p.id;
+            opt2.textContent = p.name;
+            toSelect.appendChild(opt2);
+        }
+
+        if (fromVal && fromSelect.querySelector(`option[value="${fromVal}"]`)) fromSelect.value = fromVal;
+        if (toVal && toSelect.querySelector(`option[value="${toVal}"]`)) toSelect.value = toVal;
+    }
+
+    async _getDirections() {
+        if (!this._activeMap) {
+            this._showToast('No map loaded', 'error');
+            return;
+        }
+
+        const paths = await this._store.getPaths(this._activeMap.id);
+        if (!paths || paths.length === 0) {
+            this._showToast('No recorded paths. Walk and record paths first.', 'error');
+            return;
+        }
+
+        const fromVal = document.getElementById('directions-from').value;
+        const toVal = document.getElementById('directions-to').value;
+
+        if (!toVal) {
+            this._showToast('Select a destination', 'error');
+            return;
+        }
+
+        let fromXY;
+        if (fromVal === '__mylocation__') {
+            if (!this._currentGPS || !this._transform.isReady()) {
+                this._showToast('Enable GPS tracking and calibrate first', 'error');
+                return;
+            }
+            fromXY = this._transform.gpsToPixel(this._currentGPS.lat, this._currentGPS.lng);
+            if (!fromXY) {
+                this._showToast('Could not determine your position', 'error');
+                return;
+            }
+        } else {
+            const places = this._store.getPlaces(this._activeMap.id);
+            const fromPlace = places.find(p => p.id === fromVal);
+            if (!fromPlace) { this._showToast('Origin not found', 'error'); return; }
+            fromXY = { x: fromPlace.x, y: fromPlace.y };
+        }
+
+        const places = this._store.getPlaces(this._activeMap.id);
+        const toPlace = places.find(p => p.id === toVal);
+        if (!toPlace) { this._showToast('Destination not found', 'error'); return; }
+        const toXY = { x: toPlace.x, y: toPlace.y };
+
+        this._showToast('Calculating route...');
+
+        this._graph = new WalkableGraph();
+        this._graph.build(paths);
+
+        const fromSnap = this._graph.snapPoint(fromXY.x, fromXY.y);
+        const toSnap = this._graph.snapPoint(toXY.x, toXY.y);
+
+        if (!fromSnap || !toSnap) {
+            this._showToast('Could not connect to walking paths', 'error');
+            return;
+        }
+
+        const result = this._graph.findRoute(fromSnap.nodeId, toSnap.nodeId);
+
+        if (!result) {
+            this._showToast('No route found. Record more paths to connect these locations.', 'error');
+            return;
+        }
+
+        this._clearRoute();
+        const leafletPoints = result.path.map(p => this._pixelToLeaflet(p.x, p.y));
+        this._routePolyline = L.polyline(leafletPoints, {
+            color: '#009688',
+            weight: 6,
+            opacity: 0.85,
+            lineCap: 'round',
+            lineJoin: 'round'
+        }).addTo(this._map);
+
+        this._map.fitBounds(this._routePolyline.getBounds(), { padding: [40, 40] });
+
+        const distText = this._formatDistance(result.distance);
+        document.getElementById('directions-distance-text').textContent = distText;
+        document.getElementById('directions-info').classList.remove('hidden');
+
+        this._showToast('Route found!', 'success');
+    }
+
+    _clearRoute() {
+        if (this._routePolyline) {
+            this._map.removeLayer(this._routePolyline);
+            this._routePolyline = null;
+        }
+        document.getElementById('directions-info').classList.add('hidden');
+    }
+
+    _swapDirections() {
+        const fromSelect = document.getElementById('directions-from');
+        const toSelect = document.getElementById('directions-to');
+        const fromVal = fromSelect.value;
+        const toVal = toSelect.value;
+
+        if (toVal && fromSelect.querySelector(`option[value="${toVal}"]`)) {
+            fromSelect.value = toVal;
+        }
+        if (fromVal && fromVal !== '__mylocation__' && toSelect.querySelector(`option[value="${fromVal}"]`)) {
+            toSelect.value = fromVal;
+        }
+    }
+
+    _formatDistance(pixelDist) {
+        if (this._calibrationPoints.length < 2) {
+            return `~${Math.round(pixelDist)} px`;
+        }
+
+        const p1 = this._calibrationPoints[0];
+        const p2 = this._calibrationPoints[1];
+        const gpsDistMeters = haversineDistance(p1.gps.lat, p1.gps.lng, p2.gps.lat, p2.gps.lng);
+        const pixelDistCal = Math.sqrt(
+            (p2.pixel.x - p1.pixel.x) ** 2 + (p2.pixel.y - p1.pixel.y) ** 2
+        );
+
+        if (pixelDistCal < 0.1) return `~${Math.round(pixelDist)} px`;
+
+        const meters = pixelDist * (gpsDistMeters / pixelDistCal);
+        if (meters < 1000) return `~${Math.round(meters)} m`;
+        return `~${(meters / 1000).toFixed(1)} km`;
     }
 
     // ===== Coordinate Conversions =====

@@ -46,6 +46,11 @@
                 <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
             </svg>
         </button>
+        <button id="btn-directions" class="fab fab-directions" title="Get directions">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 11l19-9-9 19-2-8-8-2z"/>
+            </svg>
+        </button>
         <button id="btn-add-place" class="fab fab-secondary" title="Add place label">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
@@ -111,6 +116,51 @@
                     Import
                 </button>
                 <input type="file" id="import-file-input" accept=".json" hidden />
+            </div>
+        </div>
+    </div>
+
+    <div id="directions-panel" class="panel hidden">
+        <div class="panel-handle"></div>
+        <div class="panel-header">
+            <h3>Directions</h3>
+            <button id="btn-close-directions" class="btn-icon" aria-label="Close">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="panel-body">
+            <div class="directions-form">
+                <div class="directions-field">
+                    <label for="directions-from">From</label>
+                    <select id="directions-from">
+                        <option value="__mylocation__">My Location</option>
+                    </select>
+                </div>
+                <button id="btn-swap-directions" class="btn-icon btn-swap" aria-label="Swap" title="Swap origin and destination">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="7 16 3 12 7 8"/>
+                        <line x1="3" y1="12" x2="21" y2="12"/>
+                        <polyline points="17 8 21 12 17 16"/>
+                    </svg>
+                </button>
+                <div class="directions-field">
+                    <label for="directions-to">To</label>
+                    <select id="directions-to"></select>
+                </div>
+            </div>
+            <div id="directions-info" class="directions-info hidden">
+                <div class="directions-distance">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                    </svg>
+                    <span id="directions-distance-text"></span>
+                </div>
+            </div>
+            <div class="panel-actions">
+                <button id="btn-clear-route" class="btn btn-outline">Clear</button>
+                <button id="btn-get-directions" class="btn btn-primary">Get Directions</button>
             </div>
         </div>
     </div>
@@ -214,6 +264,7 @@
     <script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.8/dist/leaflet-rotate-src.js"></script>
     <script src="js/transform.js"></script>
     <script src="js/store.js"></script>
+    <script src="js/graph.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

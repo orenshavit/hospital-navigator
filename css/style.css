@@ -723,6 +723,102 @@ html, body {
     border: 2px solid rgba(33, 150, 243, 0.3);
 }
 
+/* ===== Directions Button ===== */
+
+.fab-directions {
+    background: #009688;
+    color: white;
+}
+
+.fab-directions:hover {
+    background: #00796B;
+    box-shadow: var(--shadow-lg);
+}
+
+.fab-directions.active {
+    background: #00796B;
+    box-shadow: 0 0 0 3px rgba(0, 150, 136, 0.3);
+}
+
+/* ===== Directions Panel ===== */
+
+.directions-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 16px;
+    position: relative;
+}
+
+.directions-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.directions-field label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.directions-field select {
+    padding: 10px 14px;
+    border: 2px solid #e5e7eb;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    font-family: inherit;
+    font-weight: 500;
+    background: white;
+    color: var(--text);
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='3'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.directions-field select:focus {
+    border-color: var(--primary);
+}
+
+.btn-swap {
+    align-self: center;
+    color: var(--text-secondary);
+    margin: -4px 0;
+}
+
+.directions-info {
+    padding: 12px 16px;
+    background: #e0f2f1;
+    border-radius: var(--radius-sm);
+    margin-bottom: 16px;
+}
+
+.directions-info.hidden {
+    display: none;
+}
+
+.directions-distance {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #00695C;
+}
+
+/* ===== Route Polyline ===== */
+
+.route-line {
+    stroke: #009688;
+    stroke-opacity: 0.85;
+}
+
 /* ===== Record Button ===== */
 
 .fab-record {
