@@ -1,5 +1,6 @@
 const GPS_BUFFER_SIZE = 5;
 const MIN_CALIBRATION_POINTS = 3;
+const MIN_RECORD_DISTANCE_PX = 5;
 
 class HospitalNavigator {
     constructor() {
@@ -19,16 +20,18 @@ class HospitalNavigator {
         this._currentGPS = null;
         this._gpsBuffer = [];
         this._toastTimeout = null;
+
+        this._isRecording = false;
+        this._currentRecordingPath = [];
+        this._pathPolylines = [];
+        this._liveRecordingLine = null;
+
+        this._isPlacing = false;
+        this._placeMarkers = [];
     }
 
     async init() {
-        // #region agent log
-        fetch('http://127.0.0.1:7822/ingest/d2fffde5-cb36-4bce-b403-ce2825d88a22',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'73cc16'},body:JSON.stringify({sessionId:'73cc16',location:'app.js:init-start',message:'init starting',data:{},timestamp:Date.now(),hypothesisId:'H0'})}).catch(()=>{});
-        // #endregion
         this._store = await new MapStore().init();
-        // #region agent log
-        fetch('http://127.0.0.1:7822/ingest/d2fffde5-cb36-4bce-b403-ce2825d88a22',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'73cc16'},body:JSON.stringify({sessionId:'73cc16',location:'app.js:store-ready',message:'store initialized',data:{activeMapId:this._store.getActiveMapId(),hasAnyMaps:this._store.hasAnyMaps()},timestamp:Date.now(),hypothesisId:'H0'})}).catch(()=>{});
-        // #endregion
         this._initMap();
         await this._loadActiveMap();
         this._bindEvents();
@@ -57,16 +60,6 @@ class HospitalNavigator {
 
         L.control.zoom({ position: 'topleft' }).addTo(this._map);
         this._map.on('rotate', () => this._onMapRotate());
-
-        // #region agent log
-        this._map.on('zoomstart', () => { try { fetch('http://127.0.0.1:7822/ingest/d2fffde5-cb36-4bce-b403-ce2825d88a22',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'73cc16'},body:JSON.stringify({sessionId:'73cc16',location:'app.js:zoomstart',message:'zoom started',data:{zoom:this._map.getZoom(),minZoom:this._map.getMinZoom(),maxZoom:this._map.getMaxZoom()},timestamp:Date.now(),hypothesisId:'H1_H4'})}).catch(()=>{}); } catch(e){} });
-        // #endregion
-        // #region agent log
-        this._map.on('zoomend', () => { try { fetch('http://127.0.0.1:7822/ingest/d2fffde5-cb36-4bce-b403-ce2825d88a22',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'73cc16'},body:JSON.stringify({sessionId:'73cc16',location:'app.js:zoomend',message:'zoom ended',data:{zoom:this._map.getZoom(),boundsZoom:this._imageBounds?this._map.getBoundsZoom(this._imageBounds):null},timestamp:Date.now(),hypothesisId:'H2_H4'})}).catch(()=>{}); } catch(e){} });
-        // #endregion
-        // #region agent log
-        this._map.on('moveend', () => { try { fetch('http://127.0.0.1:7822/ingest/d2fffde5-cb36-4bce-b403-ce2825d88a22',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'73cc16'},body:JSON.stringify({sessionId:'73cc16',location:'app.js:moveend',message:'map moved',data:{zoom:this._map.getZoom()},timestamp:Date.now(),hypothesisId:'H3_H5'})}).catch(()=>{}); } catch(e){} });
-        // #endregion
     }
 
     async _loadActiveMap() {
@@ -96,10 +89,6 @@ class HospitalNavigator {
         this._imageOverlay = L.imageOverlay(imageUrl, this._imageBounds).addTo(this._map);
         this._map.fitBounds(this._imageBounds);
 
-        // #region agent log
-        fetch('http://127.0.0.1:7822/ingest/d2fffde5-cb36-4bce-b403-ce2825d88a22',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'73cc16'},body:JSON.stringify({sessionId:'73cc16',location:'app.js:_displayMap',message:'map displayed',data:{metaId:meta.id,width:meta.width,height:meta.height,imageBounds:this._imageBounds,zoomAfterFit:this._map.getZoom(),boundsZoom:this._map.getBoundsZoom(this._imageBounds),minZoom:this._map.getMinZoom(),maxZoom:this._map.getMaxZoom(),mapSize:this._map.getSize()},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
-        // #endregion
-
         this._calibrationPoints = meta.calibration.points || [];
         this._transform = new AffineTransform();
         if (meta.calibration.transformParams) {
@@ -112,6 +101,10 @@ class HospitalNavigator {
         this._clearCalibrationMarkers();
         this._updateCalibrationUI();
         this._updateMapSelector();
+        this._clearPathPolylines();
+        this._clearPlaceMarkers();
+        await this._loadPaths();
+        this._renderPlaceMarkers();
     }
 
     // ===== Event Binding =====
@@ -133,6 +126,12 @@ class HospitalNavigator {
         document.getElementById('btn-export-maps').addEventListener('click', () => this._exportMaps());
         document.getElementById('btn-import-maps').addEventListener('click', () => document.getElementById('import-file-input').click());
         document.getElementById('import-file-input').addEventListener('change', (e) => this._importMaps(e));
+
+        document.getElementById('btn-record').addEventListener('click', () => this._toggleRecording());
+        document.getElementById('btn-add-place').addEventListener('click', () => this._togglePlacing());
+        document.getElementById('btn-close-places').addEventListener('click', () => this._closePlacesPanel());
+        document.getElementById('btn-manage-places-done').addEventListener('click', () => this._closePlacesPanel());
+        document.getElementById('btn-clear-paths').addEventListener('click', () => this._clearAllPaths());
 
         this._map.on('click', (e) => this._onMapClick(e));
     }
@@ -222,7 +221,9 @@ class HospitalNavigator {
         }
 
         if (this._isCalibrating) this._exitCalibration();
+        if (this._isRecording) this._stopRecording();
         if (this._isTracking) this._stopTracking();
+        if (this._isPlacing) this._exitPlacing();
 
         this._store.setActiveMap(id);
         const meta = this._store.getMapMeta(id);
@@ -373,6 +374,8 @@ class HospitalNavigator {
     }
 
     _stopTracking() {
+        if (this._isRecording) this._stopRecording();
+
         this._isTracking = false;
         document.getElementById('btn-locate').classList.remove('tracking');
 
@@ -402,6 +405,10 @@ class HospitalNavigator {
 
         if (this._transform.isReady()) {
             this._updateUserPosition(latitude, longitude, accuracy);
+
+            if (this._isRecording) {
+                this._recordPoint(latitude, longitude);
+            }
         }
     }
 
@@ -538,6 +545,11 @@ class HospitalNavigator {
     }
 
     _onMapClick(e) {
+        if (this._isPlacing) {
+            this._addPlaceAtClick(e);
+            return;
+        }
+
         if (!this._isCalibrating) return;
 
         const gps = this._currentGPS;
@@ -686,6 +698,236 @@ class HospitalNavigator {
         });
     }
 
+    // ===== Path Recording =====
+
+    _toggleRecording() {
+        if (this._isRecording) {
+            this._stopRecording();
+        } else {
+            this._startRecording();
+        }
+    }
+
+    _startRecording() {
+        if (!this._transform.isReady()) {
+            this._showToast('Calibrate the map first', 'error');
+            return;
+        }
+
+        if (!this._isTracking) {
+            this._startTracking();
+        }
+
+        this._isRecording = true;
+        this._currentRecordingPath = [];
+        document.getElementById('btn-record').classList.add('recording');
+        this._showToast('Recording your path...');
+    }
+
+    _stopRecording() {
+        this._isRecording = false;
+        document.getElementById('btn-record').classList.remove('recording');
+
+        if (this._currentRecordingPath.length >= 2 && this._activeMap) {
+            this._store.addPathSegment(this._activeMap.id, [...this._currentRecordingPath]);
+            this._showToast(`Path saved (${this._currentRecordingPath.length} points)`, 'success');
+
+            if (this._liveRecordingLine) {
+                this._liveRecordingLine.setStyle({ color: '#2196F3', weight: 3, opacity: 0.5, dashArray: null });
+                this._pathPolylines.push(this._liveRecordingLine);
+                this._liveRecordingLine = null;
+            }
+        } else {
+            this._showToast('Path too short, discarded');
+            if (this._liveRecordingLine) {
+                this._map.removeLayer(this._liveRecordingLine);
+                this._liveRecordingLine = null;
+            }
+        }
+
+        this._currentRecordingPath = [];
+    }
+
+    _recordPoint(lat, lng) {
+        const pixel = this._transform.gpsToPixel(lat, lng);
+        if (!pixel) return;
+
+        const lastPt = this._currentRecordingPath[this._currentRecordingPath.length - 1];
+        if (lastPt) {
+            const dx = pixel.x - lastPt.x;
+            const dy = pixel.y - lastPt.y;
+            if (Math.sqrt(dx * dx + dy * dy) < MIN_RECORD_DISTANCE_PX) return;
+        }
+
+        this._currentRecordingPath.push({ x: pixel.x, y: pixel.y });
+
+        const leafletPoints = this._currentRecordingPath.map(
+            p => this._pixelToLeaflet(p.x, p.y)
+        );
+
+        if (this._liveRecordingLine) {
+            this._liveRecordingLine.setLatLngs(leafletPoints);
+        } else {
+            this._liveRecordingLine = L.polyline(leafletPoints, {
+                color: '#F44336',
+                weight: 4,
+                opacity: 0.8,
+                dashArray: '8, 6'
+            }).addTo(this._map);
+        }
+    }
+
+    async _loadPaths() {
+        if (!this._activeMap) return;
+        const paths = await this._store.getPaths(this._activeMap.id);
+        for (const segment of paths) {
+            const leafletPoints = segment.map(p => this._pixelToLeaflet(p.x, p.y));
+            const polyline = L.polyline(leafletPoints, {
+                color: '#2196F3',
+                weight: 3,
+                opacity: 0.5
+            }).addTo(this._map);
+            this._pathPolylines.push(polyline);
+        }
+    }
+
+    _clearPathPolylines() {
+        this._pathPolylines.forEach(p => this._map.removeLayer(p));
+        this._pathPolylines = [];
+        if (this._liveRecordingLine) {
+            this._map.removeLayer(this._liveRecordingLine);
+            this._liveRecordingLine = null;
+        }
+    }
+
+    async _clearAllPaths() {
+        if (!this._activeMap) return;
+        if (!confirm('Clear all recorded paths for this map?')) return;
+        await this._store.clearPaths(this._activeMap.id);
+        this._clearPathPolylines();
+        this._showToast('Paths cleared');
+    }
+
+    // ===== Places =====
+
+    _togglePlacing() {
+        if (this._isPlacing) {
+            this._exitPlacing();
+        } else {
+            this._enterPlacing();
+        }
+    }
+
+    _enterPlacing() {
+        if (this._isCalibrating) this._exitCalibration();
+        this._isPlacing = true;
+        document.getElementById('btn-add-place').classList.add('active');
+        document.getElementById('places-panel').classList.remove('hidden');
+        this._renderPlacesList();
+        this._showToast('Tap on the map to add a place');
+    }
+
+    _exitPlacing() {
+        this._isPlacing = false;
+        document.getElementById('btn-add-place').classList.remove('active');
+    }
+
+    _closePlacesPanel() {
+        document.getElementById('places-panel').classList.add('hidden');
+        this._exitPlacing();
+    }
+
+    _addPlaceAtClick(e) {
+        if (!this._activeMap) return;
+        const pixel = this._leafletToPixel(e.latlng.lat, e.latlng.lng);
+
+        const name = prompt('Name this place (e.g. "Cardiology", "Room 302"):');
+        if (!name || !name.trim()) return;
+
+        const place = {
+            id: Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
+            name: name.trim(),
+            x: pixel.x,
+            y: pixel.y
+        };
+
+        this._store.addPlace(this._activeMap.id, place);
+        this._addPlaceMarker(place);
+        this._renderPlacesList();
+        this._showToast(`"${place.name}" added`, 'success');
+    }
+
+    _addPlaceMarker(place) {
+        const pos = this._pixelToLeaflet(place.x, place.y);
+        const icon = L.divIcon({
+            className: 'place-marker',
+            html: `<div class="place-marker-dot"></div><div class="place-marker-label">${this._escapeHtml(place.name)}</div>`,
+            iconSize: [0, 0],
+            iconAnchor: [6, 6]
+        });
+
+        const marker = L.marker(pos, { icon, interactive: true }).addTo(this._map);
+        marker._placeId = place.id;
+
+        marker.bindPopup(`
+            <div style="text-align:center">
+                <strong>${this._escapeHtml(place.name)}</strong><br>
+                <button onclick="window.app._deletePlace('${place.id}')" style="margin-top:6px;padding:4px 12px;border:1px solid #e74c3c;border-radius:4px;background:none;color:#e74c3c;cursor:pointer;font-size:12px">Delete</button>
+            </div>
+        `, { closeButton: false, minWidth: 100 });
+
+        this._placeMarkers.push(marker);
+    }
+
+    _renderPlaceMarkers() {
+        if (!this._activeMap) return;
+        const places = this._store.getPlaces(this._activeMap.id);
+        for (const place of places) {
+            this._addPlaceMarker(place);
+        }
+    }
+
+    _clearPlaceMarkers() {
+        this._placeMarkers.forEach(m => this._map.removeLayer(m));
+        this._placeMarkers = [];
+    }
+
+    _deletePlace(placeId) {
+        if (!this._activeMap) return;
+        this._store.removePlace(this._activeMap.id, placeId);
+
+        const idx = this._placeMarkers.findIndex(m => m._placeId === placeId);
+        if (idx >= 0) {
+            this._map.removeLayer(this._placeMarkers[idx]);
+            this._placeMarkers.splice(idx, 1);
+        }
+
+        this._renderPlacesList();
+        this._showToast('Place deleted');
+    }
+
+    _renderPlacesList() {
+        const container = document.getElementById('places-list');
+        if (!this._activeMap) { container.innerHTML = ''; return; }
+
+        const places = this._store.getPlaces(this._activeMap.id);
+        container.innerHTML = places.map(p => `
+            <div class="place-item">
+                <div class="place-item-info">
+                    <div class="place-item-dot"></div>
+                    <span class="place-item-name">${this._escapeHtml(p.name)}</span>
+                </div>
+                <button class="btn-remove" data-place-id="${p.id}" aria-label="Remove place">&times;</button>
+            </div>
+        `).join('');
+
+        container.querySelectorAll('.btn-remove').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this._deletePlace(btn.dataset.placeId);
+            });
+        });
+    }
+
     // ===== Coordinate Conversions =====
 
     _pixelToLeaflet(px, py) {
@@ -735,18 +977,7 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// #region agent log
-window.addEventListener('error', (e) => { fetch('http://127.0.0.1:7822/ingest/d2fffde5-cb36-4bce-b403-ce2825d88a22',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'73cc16'},body:JSON.stringify({sessionId:'73cc16',location:'app.js:global-error',message:'uncaught error',data:{msg:e.message,file:e.filename,line:e.lineno,col:e.colno},timestamp:Date.now(),hypothesisId:'H0'})}).catch(()=>{}); });
-window.addEventListener('unhandledrejection', (e) => { fetch('http://127.0.0.1:7822/ingest/d2fffde5-cb36-4bce-b403-ce2825d88a22',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'73cc16'},body:JSON.stringify({sessionId:'73cc16',location:'app.js:unhandled-rejection',message:'unhandled promise rejection',data:{reason:String(e.reason)},timestamp:Date.now(),hypothesisId:'H0'})}).catch(()=>{}); });
-// #endregion
 document.addEventListener('DOMContentLoaded', () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7822/ingest/d2fffde5-cb36-4bce-b403-ce2825d88a22',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'73cc16'},body:JSON.stringify({sessionId:'73cc16',location:'app.js:DOMContentLoaded',message:'app starting',data:{},timestamp:Date.now(),hypothesisId:'H0'})}).catch(()=>{});
-    // #endregion
     const app = new HospitalNavigator();
-    app.init().then(() => { window.app = app; }).catch((err) => {
-        // #region agent log
-        fetch('http://127.0.0.1:7822/ingest/d2fffde5-cb36-4bce-b403-ce2825d88a22',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'73cc16'},body:JSON.stringify({sessionId:'73cc16',location:'app.js:init-error',message:'init failed',data:{error:String(err),stack:err.stack},timestamp:Date.now(),hypothesisId:'H0'})}).catch(()=>{});
-        // #endregion
-    });
+    app.init().then(() => { window.app = app; });
 });

@@ -46,6 +46,17 @@
                 <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
             </svg>
         </button>
+        <button id="btn-add-place" class="fab fab-secondary" title="Add place label">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                <line x1="7" y1="7" x2="7.01" y2="7"/>
+            </svg>
+        </button>
+        <button id="btn-record" class="fab fab-record" title="Record walking path">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="7" fill="currentColor"/>
+            </svg>
+        </button>
         <button id="btn-locate" class="fab fab-primary" title="Track my location">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="8"/>
@@ -100,6 +111,28 @@
                     Import
                 </button>
                 <input type="file" id="import-file-input" accept=".json" hidden />
+            </div>
+        </div>
+    </div>
+
+    <div id="places-panel" class="panel hidden">
+        <div class="panel-handle"></div>
+        <div class="panel-header">
+            <h3>Places</h3>
+            <button id="btn-close-places" class="btn-icon" aria-label="Close">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="panel-body">
+            <p class="instructions">
+                Tap the <strong>tag button</strong>, then tap on the map to label a location (e.g. department, room).
+            </p>
+            <div id="places-list"></div>
+            <div class="panel-actions" id="places-actions">
+                <button id="btn-clear-paths" class="btn btn-outline btn-danger">Clear Paths</button>
+                <button id="btn-manage-places-done" class="btn btn-primary">Done</button>
             </div>
         </div>
     </div>

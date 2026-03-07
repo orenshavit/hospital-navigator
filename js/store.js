@@ -1,8 +1,9 @@
 const STORE_KEY = 'hospital-nav-data';
 const OLD_STORE_KEY = 'hospital-nav-calibration';
 const DB_NAME = 'hospital-nav-db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const IMG_STORE = 'images';
+const PATHS_STORE = 'paths';
 const DEFAULT_MAP_ID = '__default__';
 
 class MapStore {
@@ -52,7 +53,8 @@ class MapStore {
             name,
             width: dims.width,
             height: dims.height,
-            calibration: { points: [], transformParams: null }
+            calibration: { points: [], transformParams: null },
+            places: []
         };
 
         this._data.maps[id] = mapMeta;
@@ -113,11 +115,62 @@ class MapStore {
         return Object.keys(this._data.maps).length > 0;
     }
 
+    // ===== Places =====
+
+    getPlaces(mapId) {
+        const meta = this._data.maps[mapId];
+        return meta ? (meta.places || []) : [];
+    }
+
+    addPlace(mapId, place) {
+        const meta = this._data.maps[mapId];
+        if (!meta) return;
+        if (!meta.places) meta.places = [];
+        meta.places.push(place);
+        this._saveMeta();
+    }
+
+    removePlace(mapId, placeId) {
+        const meta = this._data.maps[mapId];
+        if (!meta || !meta.places) return;
+        meta.places = meta.places.filter(p => p.id !== placeId);
+        this._saveMeta();
+    }
+
+    updatePlace(mapId, placeId, updates) {
+        const meta = this._data.maps[mapId];
+        if (!meta || !meta.places) return;
+        const place = meta.places.find(p => p.id === placeId);
+        if (place) Object.assign(place, updates);
+        this._saveMeta();
+    }
+
+    // ===== Paths =====
+
+    async getPaths(mapId) {
+        return await this._getFromStore(PATHS_STORE, mapId) || [];
+    }
+
+    async savePaths(mapId, paths) {
+        await this._putToStore(PATHS_STORE, mapId, paths);
+    }
+
+    async addPathSegment(mapId, segment) {
+        const paths = await this.getPaths(mapId);
+        paths.push(segment);
+        await this.savePaths(mapId, paths);
+    }
+
+    async clearPaths(mapId) {
+        await this._deleteFromStore(PATHS_STORE, mapId);
+    }
+
     async exportAll() {
-        const bundle = { version: 2, maps: {} };
+        const bundle = { version: 3, maps: {} };
         for (const [id, meta] of Object.entries(this._data.maps)) {
             const imageData = id === DEFAULT_MAP_ID ? null : await this._getImage(id);
-            bundle.maps[id] = { meta: { ...meta }, imageData };
+            const paths = await this.getPaths(id);
+            bundle.maps[id] = { meta: { ...meta }, imageData, paths };
         }
         return bundle;
     }
@@ -127,15 +180,23 @@ class MapStore {
 
         for (const [id, entry] of Object.entries(bundle.maps)) {
             if (id === DEFAULT_MAP_ID) {
-                if (entry.meta.calibration) {
-                    if (!this._data.maps[DEFAULT_MAP_ID]) continue;
-                    this._data.maps[DEFAULT_MAP_ID].calibration = entry.meta.calibration;
+                const def = this._data.maps[DEFAULT_MAP_ID];
+                if (def && entry.meta) {
+                    if (entry.meta.calibration) def.calibration = entry.meta.calibration;
+                    if (entry.meta.places) def.places = entry.meta.places;
+                }
+                if (entry.paths && entry.paths.length) {
+                    await this.savePaths(id, entry.paths);
                 }
                 continue;
             }
             this._data.maps[id] = entry.meta;
+            if (!this._data.maps[id].places) this._data.maps[id].places = [];
             if (entry.imageData) {
                 await this._putImage(id, entry.imageData);
+            }
+            if (entry.paths && entry.paths.length) {
+                await this.savePaths(id, entry.paths);
             }
         }
         this._saveMeta();
@@ -151,37 +212,52 @@ class MapStore {
                 if (!db.objectStoreNames.contains(IMG_STORE)) {
                     db.createObjectStore(IMG_STORE);
                 }
+                if (!db.objectStoreNames.contains(PATHS_STORE)) {
+                    db.createObjectStore(PATHS_STORE);
+                }
             };
             req.onsuccess = () => resolve(req.result);
             req.onerror = () => reject(req.error);
         });
     }
 
-    _putImage(id, dataUrl) {
+    _putToStore(storeName, key, value) {
         return new Promise((resolve, reject) => {
-            const tx = this._db.transaction(IMG_STORE, 'readwrite');
-            tx.objectStore(IMG_STORE).put(dataUrl, id);
+            const tx = this._db.transaction(storeName, 'readwrite');
+            tx.objectStore(storeName).put(value, key);
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
         });
     }
 
-    _getImage(id) {
+    _getFromStore(storeName, key) {
         return new Promise((resolve, reject) => {
-            const tx = this._db.transaction(IMG_STORE, 'readonly');
-            const req = tx.objectStore(IMG_STORE).get(id);
+            const tx = this._db.transaction(storeName, 'readonly');
+            const req = tx.objectStore(storeName).get(key);
             req.onsuccess = () => resolve(req.result || null);
             req.onerror = () => reject(req.error);
         });
     }
 
-    _deleteImage(id) {
+    _deleteFromStore(storeName, key) {
         return new Promise((resolve, reject) => {
-            const tx = this._db.transaction(IMG_STORE, 'readwrite');
-            tx.objectStore(IMG_STORE).delete(id);
+            const tx = this._db.transaction(storeName, 'readwrite');
+            tx.objectStore(storeName).delete(key);
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
         });
+    }
+
+    _putImage(id, dataUrl) {
+        return this._putToStore(IMG_STORE, id, dataUrl);
+    }
+
+    _getImage(id) {
+        return this._getFromStore(IMG_STORE, id);
+    }
+
+    _deleteImage(id) {
+        return this._deleteFromStore(IMG_STORE, id);
     }
 
     // ===== localStorage =====
@@ -204,7 +280,8 @@ class MapStore {
                     name: 'Default Map',
                     width: 1024,
                     height: 699,
-                    calibration: { points: [], transformParams: null }
+                    calibration: { points: [], transformParams: null },
+                    places: []
                 }
             }
         };
