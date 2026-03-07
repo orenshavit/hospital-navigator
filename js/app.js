@@ -869,15 +869,38 @@ class HospitalNavigator {
             iconAnchor: [6, 6]
         });
 
-        const marker = L.marker(pos, { icon, interactive: true }).addTo(this._map);
+        const marker = L.marker(pos, { icon, interactive: true, draggable: true }).addTo(this._map);
         marker._placeId = place.id;
 
-        marker.bindPopup(`
-            <div style="text-align:center">
-                <strong>${this._escapeHtml(place.name)}</strong><br>
-                <button onclick="window.app._deletePlace('${place.id}')" style="margin-top:6px;padding:4px 12px;border:1px solid #e74c3c;border-radius:4px;background:none;color:#e74c3c;cursor:pointer;font-size:12px">Delete</button>
-            </div>
-        `, { closeButton: false, minWidth: 100 });
+        marker.bindPopup(() => {
+            const div = document.createElement('div');
+            div.style.textAlign = 'center';
+            div.innerHTML = `<strong>${this._escapeHtml(place.name)}</strong><div style="margin-top:8px;display:flex;gap:6px;justify-content:center"></div>`;
+            const btns = div.querySelector('div');
+
+            const renameBtn = document.createElement('button');
+            renameBtn.textContent = 'Rename';
+            renameBtn.style.cssText = 'padding:4px 12px;border:1px solid #2196F3;border-radius:4px;background:none;color:#2196F3;cursor:pointer;font-size:12px';
+            renameBtn.addEventListener('click', () => { marker.closePopup(); this._renamePlace(place.id); });
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.textContent = 'Delete';
+            deleteBtn.style.cssText = 'padding:4px 12px;border:1px solid #e74c3c;border-radius:4px;background:none;color:#e74c3c;cursor:pointer;font-size:12px';
+            deleteBtn.addEventListener('click', () => { marker.closePopup(); this._deletePlace(place.id); });
+
+            btns.appendChild(renameBtn);
+            btns.appendChild(deleteBtn);
+            return div;
+        }, { closeButton: false, minWidth: 140 });
+
+        marker.on('dragend', () => {
+            const newPos = marker.getLatLng();
+            const pixel = this._leafletToPixel(newPos.lat, newPos.lng);
+            place.x = pixel.x;
+            place.y = pixel.y;
+            this._store.updatePlace(this._activeMap.id, place.id, { x: pixel.x, y: pixel.y });
+            this._showToast(`"${place.name}" moved`, 'success');
+        });
 
         this._placeMarkers.push(marker);
     }
@@ -893,6 +916,32 @@ class HospitalNavigator {
     _clearPlaceMarkers() {
         this._placeMarkers.forEach(m => this._map.removeLayer(m));
         this._placeMarkers = [];
+    }
+
+    _renamePlace(placeId) {
+        if (!this._activeMap) return;
+        const places = this._store.getPlaces(this._activeMap.id);
+        const place = places.find(p => p.id === placeId);
+        if (!place) return;
+
+        this._showPrompt('Rename place', place.name, (newName) => {
+            this._store.updatePlace(this._activeMap.id, placeId, { name: newName.trim() });
+            place.name = newName.trim();
+
+            const marker = this._placeMarkers.find(m => m._placeId === placeId);
+            if (marker) {
+                const icon = L.divIcon({
+                    className: 'place-marker',
+                    html: `<div class="place-marker-dot"></div><div class="place-marker-label">${this._escapeHtml(newName.trim())}</div>`,
+                    iconSize: [0, 0],
+                    iconAnchor: [6, 6]
+                });
+                marker.setIcon(icon);
+            }
+
+            this._renderPlacesList();
+            this._showToast(`Renamed to "${newName.trim()}"`, 'success');
+        });
     }
 
     _deletePlace(placeId) {
@@ -920,9 +969,20 @@ class HospitalNavigator {
                     <div class="place-item-dot"></div>
                     <span class="place-item-name">${this._escapeHtml(p.name)}</span>
                 </div>
-                <button class="btn-remove" data-place-id="${p.id}" aria-label="Remove place">&times;</button>
+                <div class="place-item-actions">
+                    <button class="btn-rename" data-place-id="${p.id}" aria-label="Rename place">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    </button>
+                    <button class="btn-remove" data-place-id="${p.id}" aria-label="Remove place">&times;</button>
+                </div>
             </div>
         `).join('');
+
+        container.querySelectorAll('.btn-rename').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this._renamePlace(btn.dataset.placeId);
+            });
+        });
 
         container.querySelectorAll('.btn-remove').forEach(btn => {
             btn.addEventListener('click', () => {
