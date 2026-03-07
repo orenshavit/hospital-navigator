@@ -813,6 +813,7 @@ class HospitalNavigator {
     _togglePlacing() {
         if (this._isPlacing) {
             this._exitPlacing();
+            this._openPlacesPanel();
         } else {
             this._enterPlacing();
         }
@@ -822,14 +823,17 @@ class HospitalNavigator {
         if (this._isCalibrating) this._exitCalibration();
         this._isPlacing = true;
         document.getElementById('btn-add-place').classList.add('active');
-        document.getElementById('places-panel').classList.remove('hidden');
-        this._renderPlacesList();
         this._showToast('Tap on the map to add a place');
     }
 
     _exitPlacing() {
         this._isPlacing = false;
         document.getElementById('btn-add-place').classList.remove('active');
+    }
+
+    _openPlacesPanel() {
+        document.getElementById('places-panel').classList.remove('hidden');
+        this._renderPlacesList();
     }
 
     _closePlacesPanel() {
