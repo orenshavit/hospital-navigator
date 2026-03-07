@@ -63,6 +63,7 @@ html, body {
     font-size: 13px;
     font-weight: 500;
     color: var(--text-secondary);
+    flex-shrink: 0;
 }
 
 #gps-status svg {
@@ -82,19 +83,62 @@ html, body {
     color: var(--error);
 }
 
+#status-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
 #calibration-badge {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
-    padding: 4px 10px;
+    padding: 3px 8px;
     border-radius: 20px;
     background: var(--error);
     color: white;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 #calibration-badge.calibrated {
     background: var(--success);
+}
+
+#map-selector {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border: 1.5px solid #e0e0e0;
+    border-radius: 20px;
+    background: white;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    transition: border-color 0.2s, box-shadow 0.2s;
+    min-width: 0;
+}
+
+#map-selector:hover,
+#map-selector:active {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px var(--primary-light);
+}
+
+#map-selector-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 120px;
+}
+
+#map-selector svg {
+    flex-shrink: 0;
+    opacity: 0.5;
 }
 
 /* ===== FAB Buttons ===== */
@@ -111,8 +155,8 @@ html, body {
 }
 
 .fab {
-    width: 52px;
-    height: 52px;
+    width: 48px;
+    height: 48px;
     border-radius: 50%;
     border: none;
     display: flex;
@@ -163,7 +207,7 @@ html, body {
     50% { box-shadow: 0 2px 24px rgba(76, 175, 80, 0.7); }
 }
 
-/* ===== Calibration Panel ===== */
+/* ===== Panels (shared) ===== */
 
 .panel {
     position: fixed;
@@ -334,6 +378,89 @@ html, body {
 .panel-actions {
     display: flex;
     gap: 10px;
+}
+
+/* ===== Maps Panel ===== */
+
+#maps-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 16px;
+    max-height: 40vh;
+    overflow-y: auto;
+}
+
+.map-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    background: #f8f9fa;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: border-color 0.2s, background 0.2s;
+}
+
+.map-item:hover {
+    background: #eef1f5;
+}
+
+.map-item-active {
+    border-color: var(--primary);
+    background: #e8f0fe;
+}
+
+.map-item-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+}
+
+.map-item-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.map-item-meta {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.map-item-actions {
+    flex-shrink: 0;
+    margin-left: 8px;
+}
+
+.btn-map-delete {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 20px;
+    line-height: 1;
+    padding: 4px 6px;
+    border-radius: 4px;
+    transition: color 0.2s, background 0.2s;
+}
+
+.btn-map-delete:hover {
+    color: var(--error);
+    background: rgba(244, 67, 54, 0.08);
+}
+
+.btn-upload {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
 }
 
 /* ===== Buttons ===== */
@@ -567,6 +694,16 @@ html, body {
     border: 2px solid rgba(33, 150, 243, 0.3);
 }
 
+/* ===== Compass Button ===== */
+
+#btn-compass {
+    transition: transform 0.3s ease, box-shadow 0.2s;
+}
+
+#compass-icon {
+    transition: transform 0.3s ease;
+}
+
 /* ===== Responsive ===== */
 
 @media (min-width: 768px) {
@@ -576,8 +713,8 @@ html, body {
     }
 
     .fab {
-        width: 56px;
-        height: 56px;
+        width: 52px;
+        height: 52px;
     }
 
     .panel {
@@ -596,13 +733,17 @@ html, body {
     #status-bar {
         left: auto;
         right: 0;
-        max-width: 400px;
+        max-width: 440px;
         border-radius: 0 0 0 var(--radius);
         border-left: 1px solid rgba(0, 0, 0, 0.08);
     }
 
     .overlay-card {
         padding: 44px 36px 32px;
+    }
+
+    #map-selector-name {
+        max-width: 180px;
     }
 }
 
@@ -615,16 +756,10 @@ html, body {
         padding: 10px 14px;
         font-size: 13px;
     }
-}
 
-/* ===== Compass Button ===== */
-
-#btn-compass {
-    transition: transform 0.3s ease, box-shadow 0.2s;
-}
-
-#compass-icon {
-    transition: transform 0.3s ease;
+    #map-selector-name {
+        max-width: 80px;
+    }
 }
 
 /* Leaflet overrides */

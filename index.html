@@ -10,6 +10,8 @@
 <body>
     <div id="map"></div>
 
+    <input type="file" id="map-file-input" accept="image/*" hidden />
+
     <div id="status-bar">
         <div id="gps-status">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -18,8 +20,16 @@
             </svg>
             <span id="gps-text">GPS: Inactive</span>
         </div>
-        <div id="calibration-badge">
-            <span id="calibration-badge-text">Not Calibrated</span>
+        <div id="status-right">
+            <div id="calibration-badge">
+                <span id="calibration-badge-text">Not Calibrated</span>
+            </div>
+            <button id="map-selector" type="button">
+                <span id="map-selector-name">Default Map</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                    <path d="M6 9l6 6 6-6"/>
+                </svg>
+            </button>
         </div>
     </div>
 
@@ -29,6 +39,11 @@
                 <polygon points="12,2 15,10 12,8 9,10" fill="#F44336" stroke="none"/>
                 <polygon points="12,22 9,14 12,16 15,14" fill="currentColor" stroke="none"/>
                 <circle cx="12" cy="12" r="10"/>
+            </svg>
+        </button>
+        <button id="btn-fit" class="fab fab-secondary" title="Fit map to screen">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
             </svg>
         </button>
         <button id="btn-locate" class="fab fab-primary" title="Track my location">
@@ -44,6 +59,29 @@
                 <circle cx="12" cy="10" r="3"/>
             </svg>
         </button>
+    </div>
+
+    <div id="maps-panel" class="panel hidden">
+        <div class="panel-handle"></div>
+        <div class="panel-header">
+            <h3>Maps</h3>
+            <button id="btn-close-maps" class="btn-icon" aria-label="Close">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="panel-body">
+            <div id="maps-list"></div>
+            <button id="btn-upload-map" class="btn btn-primary btn-block btn-upload">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="17 8 12 3 7 8"/>
+                    <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                Upload Map Image
+            </button>
+        </div>
     </div>
 
     <div id="calibration-panel" class="panel hidden">
@@ -93,15 +131,15 @@
             <div class="overlay-steps">
                 <div class="step">
                     <span class="step-num">1</span>
-                    <span>Calibrate by mapping 3+ physical locations to spots on the map</span>
+                    <span>Upload a map image or use the default one</span>
                 </div>
                 <div class="step">
                     <span class="step-num">2</span>
-                    <span>Tap the location button to see where you are</span>
+                    <span>Calibrate by mapping 3+ physical locations to spots on the map</span>
                 </div>
                 <div class="step">
                     <span class="step-num">3</span>
-                    <span>Walk around and watch your position update in real time</span>
+                    <span>Tap the location button and watch your position update in real time</span>
                 </div>
             </div>
             <button id="btn-get-started" class="btn btn-primary btn-block">Get Started</button>
@@ -111,6 +149,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.8/dist/leaflet-rotate-src.js"></script>
     <script src="js/transform.js"></script>
+    <script src="js/store.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

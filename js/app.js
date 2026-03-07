@@ -1,12 +1,13 @@
-const IMAGE_WIDTH = 1024;
-const IMAGE_HEIGHT = 699;
-const STORAGE_KEY = 'hospital-nav-calibration';
 const GPS_BUFFER_SIZE = 5;
 const MIN_CALIBRATION_POINTS = 3;
 
 class HospitalNavigator {
     constructor() {
         this._map = null;
+        this._store = null;
+        this._activeMap = null;
+        this._imageOverlay = null;
+        this._imageBounds = null;
         this._transform = new AffineTransform();
         this._calibrationPoints = [];
         this._calibrationMarkers = [];
@@ -18,13 +19,12 @@ class HospitalNavigator {
         this._currentGPS = null;
         this._gpsBuffer = [];
         this._toastTimeout = null;
-
-        this._init();
     }
 
-    _init() {
+    async init() {
+        this._store = await new MapStore().init();
         this._initMap();
-        this._loadCalibration();
+        await this._loadActiveMap();
         this._bindEvents();
         this._updateCalibrationUI();
         this._checkFirstVisit();
@@ -48,16 +48,43 @@ class HospitalNavigator {
         });
 
         L.control.zoom({ position: 'topleft' }).addTo(this._map);
+        this._map.on('rotate', () => this._onMapRotate());
+    }
 
-        const bounds = [[0, 0], [IMAGE_HEIGHT, IMAGE_WIDTH]];
-        L.imageOverlay('hospital-map.png', bounds).addTo(this._map);
-        this._map.fitBounds(bounds);
+    async _loadActiveMap() {
+        const meta = this._store.getActiveMap();
+        if (!meta) return;
+        await this._displayMap(meta);
+    }
+
+    async _displayMap(meta) {
+        this._activeMap = meta;
+        const imageUrl = await this._store.getImageURL(meta.id);
+
+        if (this._imageOverlay) {
+            this._map.removeLayer(this._imageOverlay);
+        }
+
+        this._imageBounds = [[0, 0], [meta.height, meta.width]];
+        this._imageOverlay = L.imageOverlay(imageUrl, this._imageBounds).addTo(this._map);
+        this._map.fitBounds(this._imageBounds);
         this._map.setMaxBounds([
-            [-IMAGE_HEIGHT * 0.2, -IMAGE_WIDTH * 0.2],
-            [IMAGE_HEIGHT * 1.2, IMAGE_WIDTH * 1.2]
+            [-meta.height * 0.2, -meta.width * 0.2],
+            [meta.height * 1.2, meta.width * 1.2]
         ]);
 
-        this._map.on('rotate', () => this._onMapRotate());
+        this._calibrationPoints = meta.calibration.points || [];
+        this._transform = new AffineTransform();
+        if (meta.calibration.transformParams) {
+            this._transform.setParams(meta.calibration.transformParams);
+        } else if (this._calibrationPoints.length >= MIN_CALIBRATION_POINTS) {
+            this._transform.compute(this._calibrationPoints);
+        }
+
+        this._removeUserMarker();
+        this._clearCalibrationMarkers();
+        this._updateCalibrationUI();
+        this._updateMapSelector();
     }
 
     // ===== Event Binding =====
@@ -70,6 +97,12 @@ class HospitalNavigator {
         document.getElementById('btn-done-calibration').addEventListener('click', () => this._finishCalibration());
         document.getElementById('btn-get-started').addEventListener('click', () => this._dismissOnboarding());
         document.getElementById('btn-compass').addEventListener('click', () => this._resetRotation());
+        document.getElementById('btn-fit').addEventListener('click', () => this._fitToScreen());
+
+        document.getElementById('map-selector').addEventListener('click', () => this._toggleMapMenu());
+        document.getElementById('btn-close-maps').addEventListener('click', () => this._closeMapMenu());
+        document.getElementById('btn-upload-map').addEventListener('click', () => this._triggerUpload());
+        document.getElementById('map-file-input').addEventListener('change', (e) => this._handleFileUpload(e));
 
         this._map.on('click', (e) => this._onMapClick(e));
     }
@@ -89,10 +122,144 @@ class HospitalNavigator {
         this._onMapRotate();
     }
 
+    // ===== Fit to Screen =====
+
+    _fitToScreen() {
+        if (!this._imageBounds) return;
+        this._map.setBearing(0);
+        this._onMapRotate();
+        this._map.fitBounds(this._imageBounds);
+    }
+
+    // ===== Map Menu =====
+
+    _toggleMapMenu() {
+        const panel = document.getElementById('maps-panel');
+        panel.classList.toggle('hidden');
+        if (!panel.classList.contains('hidden')) {
+            this._renderMapList();
+        }
+    }
+
+    _closeMapMenu() {
+        document.getElementById('maps-panel').classList.add('hidden');
+    }
+
+    _renderMapList() {
+        const container = document.getElementById('maps-list');
+        const maps = this._store.getAllMaps();
+        const activeId = this._store.getActiveMapId();
+
+        container.innerHTML = maps.map(m => {
+            const isActive = m.id === activeId;
+            const isCalibrated = m.calibration.transformParams !== null;
+            const ptCount = m.calibration.points.length;
+            return `
+                <div class="map-item ${isActive ? 'map-item-active' : ''}" data-id="${m.id}">
+                    <div class="map-item-info">
+                        <span class="map-item-name">${this._escapeHtml(m.name)}</span>
+                        <span class="map-item-meta">
+                            ${m.width}x${m.height}
+                            ${isCalibrated ? ` · Calibrated (${ptCount} pts)` : ptCount > 0 ? ` · ${ptCount} pts` : ' · Not calibrated'}
+                        </span>
+                    </div>
+                    <div class="map-item-actions">
+                        ${m.id !== '__default__' ? `<button class="btn-map-delete" data-id="${m.id}" aria-label="Delete map">&times;</button>` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        container.querySelectorAll('.map-item').forEach(el => {
+            el.addEventListener('click', (e) => {
+                if (e.target.closest('.btn-map-delete')) return;
+                this._onSelectMap(el.dataset.id);
+            });
+        });
+
+        container.querySelectorAll('.btn-map-delete').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this._onDeleteMap(btn.dataset.id);
+            });
+        });
+    }
+
+    async _onSelectMap(id) {
+        if (id === this._store.getActiveMapId()) {
+            this._closeMapMenu();
+            return;
+        }
+
+        if (this._isCalibrating) this._exitCalibration();
+        if (this._isTracking) this._stopTracking();
+
+        this._store.setActiveMap(id);
+        const meta = this._store.getMapMeta(id);
+        await this._displayMap(meta);
+        this._closeMapMenu();
+        this._showToast(`Switched to "${meta.name}"`);
+    }
+
+    async _onDeleteMap(id) {
+        const meta = this._store.getMapMeta(id);
+        if (!meta) return;
+        if (!confirm(`Delete "${meta.name}"?`)) return;
+
+        await this._store.deleteMap(id);
+
+        if (this._store.getActiveMapId() && this._store.getActiveMapId() !== this._activeMap?.id) {
+            const newMeta = this._store.getActiveMap();
+            if (newMeta) await this._displayMap(newMeta);
+        }
+
+        this._renderMapList();
+        this._showToast(`"${meta.name}" deleted`);
+    }
+
+    // ===== Upload =====
+
+    _triggerUpload() {
+        document.getElementById('map-file-input').click();
+    }
+
+    async _handleFileUpload(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        e.target.value = '';
+
+        if (!file.type.startsWith('image/')) {
+            this._showToast('Please select an image file', 'error');
+            return;
+        }
+
+        const name = prompt('Name this map:', file.name.replace(/\.[^.]+$/, ''));
+        if (!name) return;
+
+        try {
+            this._showToast('Uploading map...');
+            const meta = await this._store.addMap(name.trim(), file);
+            await this._displayMap(meta);
+            this._closeMapMenu();
+            this._showToast(`"${meta.name}" added`, 'success');
+        } catch {
+            this._showToast('Failed to upload map', 'error');
+        }
+    }
+
+    _updateMapSelector() {
+        const el = document.getElementById('map-selector-name');
+        if (el && this._activeMap) {
+            el.textContent = this._activeMap.name;
+        }
+    }
+
     // ===== Onboarding =====
 
     _checkFirstVisit() {
-        if (!localStorage.getItem(STORAGE_KEY)) {
+        const hasOldData = localStorage.getItem('hospital-nav-calibration');
+        const hasNewData = localStorage.getItem('hospital-nav-data');
+        if (!hasOldData && !hasNewData) {
             document.getElementById('onboarding-overlay').classList.remove('hidden');
         }
     }
@@ -336,7 +503,9 @@ class HospitalNavigator {
         this._clearCalibrationMarkers();
         this._transform = new AffineTransform();
         this._updateCalibrationUI();
-        localStorage.removeItem(STORAGE_KEY);
+        if (this._activeMap) {
+            this._store.clearCalibration(this._activeMap.id);
+        }
         this._showToast('Calibration cleared');
     }
 
@@ -357,6 +526,15 @@ class HospitalNavigator {
         this._clearCalibrationMarkers();
         this._updateCalibrationUI();
         this._showToast('Calibration complete!', 'success');
+    }
+
+    _saveCalibration() {
+        if (!this._activeMap) return;
+        this._store.saveCalibration(
+            this._activeMap.id,
+            this._calibrationPoints,
+            this._transform.getParams()
+        );
     }
 
     _addCalibrationMarker(point, index) {
@@ -436,53 +614,16 @@ class HospitalNavigator {
         });
     }
 
-    // ===== Persistence =====
-
-    _saveCalibration() {
-        const data = {
-            version: 1,
-            points: this._calibrationPoints,
-            transformParams: this._transform.getParams()
-        };
-        try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-        } catch {
-            this._showToast('Could not save calibration data', 'error');
-        }
-    }
-
-    _loadCalibration() {
-        let raw;
-        try {
-            raw = localStorage.getItem(STORAGE_KEY);
-        } catch {
-            return;
-        }
-        if (!raw) return;
-
-        try {
-            const data = JSON.parse(raw);
-            this._calibrationPoints = data.points || [];
-
-            if (data.transformParams) {
-                this._transform.setParams(data.transformParams);
-            } else if (this._calibrationPoints.length >= MIN_CALIBRATION_POINTS) {
-                this._transform.compute(this._calibrationPoints);
-                this._saveCalibration();
-            }
-        } catch {
-            localStorage.removeItem(STORAGE_KEY);
-        }
-    }
-
     // ===== Coordinate Conversions =====
 
     _pixelToLeaflet(px, py) {
-        return L.latLng(IMAGE_HEIGHT - py, px);
+        if (!this._activeMap) return L.latLng(0, 0);
+        return L.latLng(this._activeMap.height - py, px);
     }
 
     _leafletToPixel(lat, lng) {
-        return { x: lng, y: IMAGE_HEIGHT - lat };
+        if (!this._activeMap) return { x: 0, y: 0 };
+        return { x: lng, y: this._activeMap.height - lat };
     }
 
     // ===== UI Helpers =====
@@ -504,6 +645,12 @@ class HospitalNavigator {
             toast.className = 'toast hidden';
         }, 3000);
     }
+
+    _escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
 }
 
 function haversineDistance(lat1, lng1, lat2, lng2) {
@@ -517,5 +664,6 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    window.app = new HospitalNavigator();
+    const app = new HospitalNavigator();
+    app.init().then(() => { window.app = app; });
 });
