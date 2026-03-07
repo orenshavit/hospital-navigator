@@ -757,12 +757,14 @@ html, body {
 
 /* ===== Place Markers ===== */
 
-.place-marker {
+.leaflet-marker-icon.place-marker {
     display: flex;
     flex-direction: column;
     align-items: center;
     pointer-events: auto;
     overflow: visible !important;
+    width: auto !important;
+    height: auto !important;
 }
 
 .place-marker-dot {
@@ -775,16 +777,16 @@ html, body {
 }
 
 .place-marker-label {
-    background: rgba(156, 39, 176, 0.9);
+    background: rgba(156, 39, 176, 0.92);
     color: white;
-    padding: 2px 8px;
+    padding: 3px 10px;
     border-radius: 10px;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
-    margin-top: 2px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-    max-width: 150px;
+    margin-top: 3px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+    max-width: 180px;
     overflow: hidden;
     text-overflow: ellipsis;
     position: relative;
