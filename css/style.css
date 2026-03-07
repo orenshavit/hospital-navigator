@@ -617,19 +617,39 @@ html, body {
     }
 }
 
+/* ===== Compass Button ===== */
+
+#btn-compass {
+    transition: transform 0.3s ease, box-shadow 0.2s;
+}
+
+#compass-icon {
+    transition: transform 0.3s ease;
+}
+
 /* Leaflet overrides */
 .leaflet-control-zoom {
     border: none !important;
     box-shadow: var(--shadow) !important;
     border-radius: var(--radius-sm) !important;
     overflow: hidden;
+    margin-left: 12px !important;
+    margin-bottom: 12px !important;
 }
 
 .leaflet-control-zoom a {
-    width: 36px !important;
-    height: 36px !important;
-    line-height: 36px !important;
-    font-size: 18px !important;
+    width: 40px !important;
+    height: 40px !important;
+    line-height: 40px !important;
+    font-size: 20px !important;
     color: var(--text) !important;
     border-bottom-color: #eee !important;
+}
+
+.leaflet-bottom.leaflet-left {
+    bottom: max(8px, env(safe-area-inset-bottom));
+}
+
+.leaflet-top.leaflet-left {
+    top: 52px;
 }

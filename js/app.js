@@ -40,8 +40,14 @@ class HospitalNavigator {
             zoomSnap: 0.25,
             zoomDelta: 0.5,
             attributionControl: false,
-            zoomControl: true
+            zoomControl: false,
+            rotate: true,
+            touchRotate: true,
+            shiftKeyRotate: true,
+            bearing: 0
         });
+
+        L.control.zoom({ position: 'topleft' }).addTo(this._map);
 
         const bounds = [[0, 0], [IMAGE_HEIGHT, IMAGE_WIDTH]];
         L.imageOverlay('hospital-map.png', bounds).addTo(this._map);
@@ -50,6 +56,8 @@ class HospitalNavigator {
             [-IMAGE_HEIGHT * 0.2, -IMAGE_WIDTH * 0.2],
             [IMAGE_HEIGHT * 1.2, IMAGE_WIDTH * 1.2]
         ]);
+
+        this._map.on('rotate', () => this._onMapRotate());
     }
 
     // ===== Event Binding =====
@@ -61,8 +69,24 @@ class HospitalNavigator {
         document.getElementById('btn-clear-calibration').addEventListener('click', () => this._clearCalibration());
         document.getElementById('btn-done-calibration').addEventListener('click', () => this._finishCalibration());
         document.getElementById('btn-get-started').addEventListener('click', () => this._dismissOnboarding());
+        document.getElementById('btn-compass').addEventListener('click', () => this._resetRotation());
 
         this._map.on('click', (e) => this._onMapClick(e));
+    }
+
+    // ===== Rotation =====
+
+    _onMapRotate() {
+        const bearing = this._map.getBearing();
+        const icon = document.getElementById('compass-icon');
+        if (icon) {
+            icon.style.transform = `rotate(${-bearing}deg)`;
+        }
+    }
+
+    _resetRotation() {
+        this._map.setBearing(0);
+        this._onMapRotate();
     }
 
     // ===== Onboarding =====
@@ -193,7 +217,6 @@ class HospitalNavigator {
     }
 
     _updateAccuracyCircle(center, accuracyMeters) {
-        // Estimate pixel radius from GPS accuracy using calibration scale
         const pixelRadius = this._estimatePixelRadius(accuracyMeters);
 
         if (!this._accuracyCircle) {
@@ -213,7 +236,6 @@ class HospitalNavigator {
     _estimatePixelRadius(meters) {
         if (this._calibrationPoints.length < 2) return 30;
 
-        // Use two calibration points to estimate the scale (pixels per meter)
         const p1 = this._calibrationPoints[0];
         const p2 = this._calibrationPoints[1];
 
@@ -418,21 +440,35 @@ class HospitalNavigator {
 
     _saveCalibration() {
         const data = {
+            version: 1,
             points: this._calibrationPoints,
             transformParams: this._transform.getParams()
         };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        } catch {
+            this._showToast('Could not save calibration data', 'error');
+        }
     }
 
     _loadCalibration() {
-        const raw = localStorage.getItem(STORAGE_KEY);
+        let raw;
+        try {
+            raw = localStorage.getItem(STORAGE_KEY);
+        } catch {
+            return;
+        }
         if (!raw) return;
 
         try {
             const data = JSON.parse(raw);
             this._calibrationPoints = data.points || [];
+
             if (data.transformParams) {
                 this._transform.setParams(data.transformParams);
+            } else if (this._calibrationPoints.length >= MIN_CALIBRATION_POINTS) {
+                this._transform.compute(this._calibrationPoints);
+                this._saveCalibration();
             }
         } catch {
             localStorage.removeItem(STORAGE_KEY);

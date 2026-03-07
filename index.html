@@ -24,6 +24,13 @@
     </div>
 
     <div id="fab-container">
+        <button id="btn-compass" class="fab fab-secondary" title="Reset rotation">
+            <svg id="compass-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="12,2 15,10 12,8 9,10" fill="#F44336" stroke="none"/>
+                <polygon points="12,22 9,14 12,16 15,14" fill="currentColor" stroke="none"/>
+                <circle cx="12" cy="12" r="10"/>
+            </svg>
+        </button>
         <button id="btn-locate" class="fab fab-primary" title="Track my location">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="8"/>
@@ -102,6 +109,7 @@
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.8/dist/leaflet-rotate-src.js"></script>
     <script src="js/transform.js"></script>
     <script src="js/app.js"></script>
 </body>
