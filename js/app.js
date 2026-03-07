@@ -264,18 +264,18 @@ class HospitalNavigator {
             return;
         }
 
-        const name = prompt('Name this map:', file.name.replace(/\.[^.]+$/, ''));
-        if (!name) return;
-
-        try {
-            this._showToast('Uploading map...');
-            const meta = await this._store.addMap(name.trim(), file);
-            await this._displayMap(meta);
-            this._closeMapMenu();
-            this._showToast(`"${meta.name}" added`, 'success');
-        } catch {
-            this._showToast('Failed to upload map', 'error');
-        }
+        const defaultName = file.name.replace(/\.[^.]+$/, '');
+        this._showPrompt('Name this map', defaultName, async (name) => {
+            try {
+                this._showToast('Uploading map...');
+                const meta = await this._store.addMap(name.trim(), file);
+                await this._displayMap(meta);
+                this._closeMapMenu();
+                this._showToast(`"${meta.name}" added`, 'success');
+            } catch {
+                this._showToast('Failed to upload map', 'error');
+            }
+        });
     }
 
     async _exportMaps() {
@@ -845,20 +845,19 @@ class HospitalNavigator {
         if (!this._activeMap) return;
         const pixel = this._leafletToPixel(e.latlng.lat, e.latlng.lng);
 
-        const name = prompt('Name this place (e.g. "Cardiology", "Room 302"):');
-        if (!name || !name.trim()) return;
+        this._showPrompt('Name this place', 'e.g. Cardiology, Room 302', (name) => {
+            const place = {
+                id: Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
+                name: name.trim(),
+                x: pixel.x,
+                y: pixel.y
+            };
 
-        const place = {
-            id: Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
-            name: name.trim(),
-            x: pixel.x,
-            y: pixel.y
-        };
-
-        this._store.addPlace(this._activeMap.id, place);
-        this._addPlaceMarker(place);
-        this._renderPlacesList();
-        this._showToast(`"${place.name}" added`, 'success');
+            this._store.addPlace(this._activeMap.id, place);
+            this._addPlaceMarker(place);
+            this._renderPlacesList();
+            this._showToast(`"${place.name}" added`, 'success');
+        });
     }
 
     _addPlaceMarker(place) {
@@ -962,6 +961,43 @@ class HospitalNavigator {
         this._toastTimeout = setTimeout(() => {
             toast.className = 'toast hidden';
         }, 3000);
+    }
+
+    _showPrompt(title, placeholder, onConfirm) {
+        const overlay = document.getElementById('prompt-overlay');
+        const input = document.getElementById('prompt-input');
+        const titleEl = document.getElementById('prompt-title');
+        const okBtn = document.getElementById('prompt-ok');
+        const cancelBtn = document.getElementById('prompt-cancel');
+
+        titleEl.textContent = title;
+        input.placeholder = placeholder;
+        input.value = '';
+        overlay.classList.remove('hidden');
+        input.focus();
+
+        const cleanup = () => {
+            overlay.classList.add('hidden');
+            okBtn.replaceWith(okBtn.cloneNode(true));
+            cancelBtn.replaceWith(cancelBtn.cloneNode(true));
+            input.removeEventListener('keydown', onKey);
+        };
+
+        const confirm = () => {
+            const val = input.value.trim();
+            if (!val) { input.focus(); return; }
+            cleanup();
+            onConfirm(val);
+        };
+
+        const onKey = (e) => {
+            if (e.key === 'Enter') confirm();
+            if (e.key === 'Escape') cleanup();
+        };
+
+        document.getElementById('prompt-ok').addEventListener('click', confirm);
+        document.getElementById('prompt-cancel').addEventListener('click', cleanup);
+        input.addEventListener('keydown', onKey);
     }
 
     _escapeHtml(text) {
