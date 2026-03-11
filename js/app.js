@@ -1,6 +1,10 @@
-const GPS_BUFFER_SIZE = 5;
+const GPS_BUFFER_SIZE = 10;
 const MIN_CALIBRATION_POINTS = 3;
 const MIN_RECORD_DISTANCE_PX = 5;
+const GPS_OUTLIER_JUMP_M = 50;
+const GPS_MAX_ACCURACY_M = 100;
+const KALMAN_PROCESS_NOISE = 2;
+const KALMAN_INIT_VARIANCE = 100;
 
 class HospitalNavigator {
     constructor() {
@@ -31,6 +35,9 @@ class HospitalNavigator {
 
         this._routePolyline = null;
         this._graph = null;
+
+        this._kalman = null;
+        this._isOutOfBounds = false;
     }
 
     async init() {
@@ -94,10 +101,10 @@ class HospitalNavigator {
 
         this._calibrationPoints = meta.calibration.points || [];
         this._transform = new AffineTransform();
-        if (meta.calibration.transformParams) {
-            this._transform.setParams(meta.calibration.transformParams);
-        } else if (this._calibrationPoints.length >= MIN_CALIBRATION_POINTS) {
+        if (this._calibrationPoints.length >= MIN_CALIBRATION_POINTS) {
             this._transform.compute(this._calibrationPoints);
+        } else if (meta.calibration.transformParams) {
+            this._transform.setParams(meta.calibration.transformParams);
         }
 
         this._removeUserMarker();
@@ -396,17 +403,34 @@ class HospitalNavigator {
 
         this._removeUserMarker();
         this._updateGPSStatus('GPS: Inactive', '');
+        this._kalman = null;
+        this._gpsBuffer = [];
+
+        if (this._isOutOfBounds) {
+            this._isOutOfBounds = false;
+            this._showOutOfBoundsBanner(false);
+        }
     }
 
     _onGPSUpdate(position) {
         const { latitude, longitude, accuracy } = position.coords;
+
+        if (accuracy > GPS_MAX_ACCURACY_M) return;
+
+        if (this._gpsBuffer.length > 0) {
+            const last = this._gpsBuffer[this._gpsBuffer.length - 1];
+            const jump = haversineDistance(last.lat, last.lng, latitude, longitude);
+            if (jump > GPS_OUTLIER_JUMP_M && accuracy > 15) return;
+        }
 
         this._gpsBuffer.push({ lat: latitude, lng: longitude, accuracy });
         if (this._gpsBuffer.length > GPS_BUFFER_SIZE) {
             this._gpsBuffer.shift();
         }
 
-        this._currentGPS = { lat: latitude, lng: longitude, accuracy };
+        const smoothed = this._kalmanUpdate(latitude, longitude, accuracy);
+
+        this._currentGPS = { lat: smoothed.lat, lng: smoothed.lng, accuracy };
 
         const statusClass = accuracy < 10 ? 'active' : (accuracy < 30 ? '' : 'error');
         this._updateGPSStatus(`GPS: ±${Math.round(accuracy)}m`, statusClass);
@@ -414,12 +438,33 @@ class HospitalNavigator {
         if (this._isCalibrating) return;
 
         if (this._transform.isReady()) {
-            this._updateUserPosition(latitude, longitude, accuracy);
+            this._updateUserPosition(smoothed.lat, smoothed.lng, accuracy);
 
             if (this._isRecording) {
-                this._recordPoint(latitude, longitude);
+                this._recordPoint(smoothed.lat, smoothed.lng);
             }
         }
+    }
+
+    _kalmanUpdate(lat, lng, accuracy) {
+        if (!this._kalman) {
+            this._kalman = {
+                lat, lng,
+                variance: KALMAN_INIT_VARIANCE
+            };
+            return { lat, lng };
+        }
+
+        const k = this._kalman;
+        const predicted_var = k.variance + KALMAN_PROCESS_NOISE;
+        const measurement_var = accuracy * accuracy;
+        const gain = predicted_var / (predicted_var + measurement_var);
+
+        k.lat = k.lat + gain * (lat - k.lat);
+        k.lng = k.lng + gain * (lng - k.lng);
+        k.variance = (1 - gain) * predicted_var;
+
+        return { lat: k.lat, lng: k.lng };
     }
 
     _onGPSError(error) {
@@ -435,16 +480,23 @@ class HospitalNavigator {
     _getAveragedGPS() {
         if (this._gpsBuffer.length === 0) return this._currentGPS;
 
-        const sum = this._gpsBuffer.reduce(
-            (acc, p) => ({ lat: acc.lat + p.lat, lng: acc.lng + p.lng }),
-            { lat: 0, lng: 0 }
-        );
+        let totalWeight = 0;
+        let wLat = 0;
+        let wLng = 0;
+
+        for (const p of this._gpsBuffer) {
+            const w = 1 / (p.accuracy * p.accuracy);
+            wLat += p.lat * w;
+            wLng += p.lng * w;
+            totalWeight += w;
+        }
+
         const n = this._gpsBuffer.length;
         const avgAccuracy = this._gpsBuffer.reduce((a, p) => a + p.accuracy, 0) / n;
 
         return {
-            lat: sum.lat / n,
-            lng: sum.lng / n,
+            lat: wLat / totalWeight,
+            lng: wLng / totalWeight,
             accuracy: avgAccuracy
         };
     }
@@ -454,6 +506,12 @@ class HospitalNavigator {
     _updateUserPosition(lat, lng, accuracy) {
         const pixel = this._transform.gpsToPixel(lat, lng);
         if (!pixel) return;
+
+        const oob = this._isPixelOutOfBounds(pixel.x, pixel.y);
+        if (oob !== this._isOutOfBounds) {
+            this._isOutOfBounds = oob;
+            this._showOutOfBoundsBanner(oob);
+        }
 
         const leafletPos = this._pixelToLeaflet(pixel.x, pixel.y);
 
@@ -470,6 +528,23 @@ class HospitalNavigator {
         }
 
         this._updateAccuracyCircle(leafletPos, accuracy);
+    }
+
+    _isPixelOutOfBounds(x, y) {
+        if (!this._activeMap) return false;
+        const margin = 50;
+        return x < -margin || y < -margin ||
+               x > this._activeMap.width + margin ||
+               y > this._activeMap.height + margin;
+    }
+
+    _showOutOfBoundsBanner(show) {
+        const banner = document.getElementById('oob-banner');
+        if (show) {
+            banner.classList.remove('hidden');
+        } else {
+            banner.classList.add('hidden');
+        }
     }
 
     _updateAccuracyCircle(center, accuracyMeters) {
@@ -575,10 +650,12 @@ class HospitalNavigator {
 
         const averaged = this._getAveragedGPS();
         const pixel = this._leafletToPixel(e.latlng.lat, e.latlng.lng);
+        const pointAccuracy = averaged.accuracy || gps.accuracy;
 
         const point = {
             gps: { lat: averaged.lat, lng: averaged.lng },
-            pixel: { x: pixel.x, y: pixel.y }
+            pixel: { x: pixel.x, y: pixel.y },
+            accuracy: pointAccuracy
         };
 
         this._calibrationPoints.push(point);
@@ -587,7 +664,7 @@ class HospitalNavigator {
         this._saveCalibration();
 
         this._showToast(
-            `Point ${this._calibrationPoints.length} added (±${Math.round(gps.accuracy)}m)`,
+            `Point ${this._calibrationPoints.length} added (±${Math.round(pointAccuracy)}m)`,
             'success'
         );
     }
@@ -619,7 +696,9 @@ class HospitalNavigator {
         this._exitCalibration();
         this._clearCalibrationMarkers();
         this._updateCalibrationUI();
-        this._showToast('Calibration complete!', 'success');
+
+        const count = this._calibrationPoints.length;
+        this._showToast(`Calibration updated with ${count} points!`, 'success');
     }
 
     _saveCalibration() {
@@ -633,8 +712,10 @@ class HospitalNavigator {
 
     _addCalibrationMarker(point, index) {
         const pos = this._pixelToLeaflet(point.pixel.x, point.pixel.y);
+        const acc = point.accuracy || 0;
+        const accClass = acc < 10 ? 'cal-marker-good' : (acc < 30 ? 'cal-marker-ok' : 'cal-marker-poor');
         const icon = L.divIcon({
-            className: 'cal-marker',
+            className: `cal-marker ${accClass}`,
             html: `${index}`,
             iconSize: [28, 28],
             iconAnchor: [14, 14]
@@ -692,13 +773,19 @@ class HospitalNavigator {
 
     _renderPointsList() {
         const container = document.getElementById('calibration-points-list');
-        container.innerHTML = this._calibrationPoints.map((p, i) => `
+        container.innerHTML = this._calibrationPoints.map((p, i) => {
+            const acc = p.accuracy || 0;
+            const accClass = acc < 10 ? 'acc-good' : (acc < 30 ? 'acc-ok' : 'acc-poor');
+            const accText = acc > 0 ? `±${Math.round(acc)}m` : '';
+            return `
             <div class="cal-point-item">
                 <span class="point-label">#${i + 1}</span>
                 <span class="point-coords">${p.gps.lat.toFixed(6)}, ${p.gps.lng.toFixed(6)}</span>
+                ${accText ? `<span class="point-accuracy ${accClass}">${accText}</span>` : ''}
                 <button class="btn-remove" data-index="${i}" aria-label="Remove point">&times;</button>
             </div>
-        `).join('');
+        `;
+        }).join('');
 
         container.querySelectorAll('.btn-remove').forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -761,6 +848,8 @@ class HospitalNavigator {
     _recordPoint(lat, lng) {
         const pixel = this._transform.gpsToPixel(lat, lng);
         if (!pixel) return;
+
+        if (this._isPixelOutOfBounds(pixel.x, pixel.y)) return;
 
         const lastPt = this._currentRecordingPath[this._currentRecordingPath.length - 1];
         if (lastPt) {

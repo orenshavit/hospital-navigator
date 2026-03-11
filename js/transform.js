@@ -20,9 +20,13 @@ class AffineTransform {
         const A = referencePoints.map(p => [p.gps.lat, p.gps.lng, 1]);
         const bx = referencePoints.map(p => p.pixel.x);
         const by = referencePoints.map(p => p.pixel.y);
+        const w = referencePoints.map(p => {
+            const acc = p.accuracy || 10;
+            return 1 / (acc * acc);
+        });
 
-        const xParams = solveLeastSquares(A, bx);
-        const yParams = solveLeastSquares(A, by);
+        const xParams = solveLeastSquares(A, bx, w);
+        const yParams = solveLeastSquares(A, by, w);
 
         if (!xParams || !yParams) return false;
 
@@ -56,7 +60,7 @@ class AffineTransform {
     }
 }
 
-function solveLeastSquares(A, b) {
+function solveLeastSquares(A, b, weights) {
     const n = A.length;
     const m = 3;
 
@@ -64,7 +68,8 @@ function solveLeastSquares(A, b) {
     for (let i = 0; i < m; i++) {
         for (let j = 0; j < m; j++) {
             for (let k = 0; k < n; k++) {
-                ATA[i][j] += A[k][i] * A[k][j];
+                const w = weights ? weights[k] : 1;
+                ATA[i][j] += w * A[k][i] * A[k][j];
             }
         }
     }
@@ -72,7 +77,8 @@ function solveLeastSquares(A, b) {
     const ATb = new Array(m).fill(0);
     for (let i = 0; i < m; i++) {
         for (let k = 0; k < n; k++) {
-            ATb[i] += A[k][i] * b[k];
+            const w = weights ? weights[k] : 1;
+            ATb[i] += w * A[k][i] * b[k];
         }
     }
 
