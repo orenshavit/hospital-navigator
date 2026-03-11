@@ -16,6 +16,7 @@ class MapStore {
         this._db = await this._openDB();
         this._data = this._loadMeta();
         await this._migrateOldFormat();
+        await this._seedDefaultData();
         return this;
     }
 
@@ -317,6 +318,27 @@ class MapStore {
             localStorage.removeItem(OLD_STORE_KEY);
         } catch {
             localStorage.removeItem(OLD_STORE_KEY);
+        }
+    }
+
+    // ===== Seed Defaults =====
+
+    async _seedDefaultData() {
+        const hasExistingData = localStorage.getItem(STORE_KEY) !== null;
+        if (hasExistingData) return;
+
+        try {
+            const resp = await fetch('default-data.json');
+            if (!resp.ok) return;
+            const bundle = await resp.json();
+            await this.importAll(bundle);
+
+            if (bundle.activeMapId && this._data.maps[bundle.activeMapId]) {
+                this._data.activeMapId = bundle.activeMapId;
+            }
+            this._saveMeta();
+        } catch {
+            // Seed file not available, continue with empty defaults
         }
     }
 
